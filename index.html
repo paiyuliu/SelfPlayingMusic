@@ -324,6 +324,14 @@
     <button class="btn-pill"        data-v="root-chord">根音＋和弦</button>
     <button class="btn-pill"        data-v="arpeggio">琶音（大三）</button>
   </div>
+  <div class="divider"></div>
+  <div class="card-title">和弦拍數</div>
+  <div class="btn-group" id="beatsGroup">
+    <button class="btn-pill"        data-v="1">1 拍</button>
+    <button class="btn-pill"        data-v="2">2 拍</button>
+    <button class="btn-pill"        data-v="3">3 拍</button>
+    <button class="btn-pill active" data-v="4">4 拍</button>
+  </div>
 </div>
 
 <!-- Keyboard Card -->
@@ -365,11 +373,12 @@
 // ═══════════════════════════════════════════════════════
 //  State
 // ═══════════════════════════════════════════════════════
-let bpm       = 120;
-let chordType = 'major';   // 'major' | 'minor' | 'root-chord' | 'arpeggio'
-let timbre    = 'piano';   // 'piano' | 'organ'
-let metroOn   = false;
+let bpm        = 120;
+let chordType  = 'major';   // 'major' | 'minor' | 'root-chord' | 'arpeggio'
+let timbre     = 'piano';   // 'piano' | 'organ'
+let metroOn    = false;
 let audioReady = false;
+let chordBeats = 4;         // 1 | 2 | 3 | 4
 
 // ═══════════════════════════════════════════════════════
 //  Tone.js synths
@@ -490,16 +499,20 @@ async function triggerChord(rootMidi) {
 
   const midis = getChordMidis(rootMidi);
   const freqs = midis.map(m => Tone.Midi(m).toFrequency());
-  const beatSec   = 60 / bpm;
-  const measureSec = beatSec * 4;
+  const beatSec = 60 / bpm;
   const now = Tone.now() + 0.02; // small scheduling lookahead
 
+  const isFixed = (chordType === 'root-chord' || chordType === 'arpeggio');
+  const activeBeatCount = isFixed ? 4 : chordBeats;
+  const chordDuration   = beatSec * activeBeatCount;
+  const beatsLabel      = isFixed ? '' : ` (${chordBeats}拍)`;
+
   document.getElementById('playingDisplay').textContent =
-    midiToName(rootMidi) + '  ' + chordLabel();
+    midiToName(rootMidi) + '  ' + chordLabel() + beatsLabel;
 
   if (chordType === 'major' || chordType === 'minor') {
-    // All notes together for the full measure
-    syn.triggerAttackRelease(freqs, measureSec, now);
+    // All notes together for the selected number of beats
+    syn.triggerAttackRelease(freqs, chordDuration, now);
   } else if (chordType === 'root-chord') {
     // Beat 1: root, Beats 2–4: chord struck once each beat (恰恰恰)
     syn.triggerAttackRelease(freqs[0], beatSec * 0.88, now);
@@ -514,7 +527,7 @@ async function triggerChord(rootMidi) {
   }
 
   // Beat dot animation (visual only, setTimeout is fine here)
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < activeBeatCount; i++) {
     beatTimers.push(setTimeout(() => {
       clearBeatDots();
       document.getElementById('b' + i).classList.add('active');
@@ -523,7 +536,7 @@ async function triggerChord(rootMidi) {
   beatTimers.push(setTimeout(() => {
     clearBeatDots();
     document.getElementById('playingDisplay').textContent = '—';
-  }, (measureSec + 0.15) * 1000));
+  }, (chordDuration + 0.15) * 1000));
 }
 
 // ═══════════════════════════════════════════════════════
@@ -671,6 +684,14 @@ document.getElementById('chordGroup').addEventListener('click', e => {
   document.querySelectorAll('#chordGroup .btn-pill')
     .forEach(b => b.classList.toggle('active', b.dataset.v === v));
   chordType = v;
+});
+
+document.getElementById('beatsGroup').addEventListener('click', e => {
+  const v = e.target.dataset.v;
+  if (!v) return;
+  document.querySelectorAll('#beatsGroup .btn-pill')
+    .forEach(b => b.classList.toggle('active', b.dataset.v === v));
+  chordBeats = parseInt(v, 10);
 });
 
 // ═══════════════════════════════════════════════════════
