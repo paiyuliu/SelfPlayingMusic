@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SelfPlayingMusic 自彈自唱</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+  <style>
+    :root {
+      --bg:         #0d0d1a;
+      --surface:    #181828;
+      --surface2:   #22223a;
+      --border:     #2e2e50;
+      --accent:     #7c5cbf;
+      --hot:        #c45ca8;
+      --text:       #e0e0f0;
+      --dim:        #6868a0;
+      --green:      #4caf70;
+      --white-key:  #f4eeff;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 48px;
+      gap: 14px;
+    }
+
+    /* ── Header ──────────────────────────────── */
+    header { text-align: center; margin-bottom: 4px; }
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: -1px;
+      background: linear-gradient(135deg, var(--accent), var(--hot));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .subtitle { font-size: 0.8rem; color: var(--dim); margin-top: 3px; }
+
+    /* ── Card ────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px 24px;
+      width: 100%;
+      max-width: 700px;
+    }
+    .card-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--dim);
+      margin-bottom: 14px;
+    }
+    .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+    /* ── BPM ─────────────────────────────────── */
+    .bpm-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .bpm-center { display: flex; flex-direction: column; align-items: center; }
+    .bpm-num {
+      font-size: 3.8rem;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--accent);
+      cursor: ns-resize;
+      user-select: none;
+      min-width: 100px;
+      text-align: center;
+    }
+    .bpm-unit { font-size: 0.68rem; color: var(--dim); letter-spacing: 2px; margin-top: 2px; }
+
+    .btn-icon {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 1.4rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .btn-icon:hover  { background: var(--accent); border-color: var(--accent); }
+    .btn-icon:active { transform: scale(0.9); }
+
+    .bpm-input {
+      width: 76px; padding: 8px 6px;
+      border-radius: 8px;
+      border: 2px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 1rem;
+      text-align: center;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .bpm-input:focus { border-color: var(--accent); }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--surface2);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+
+    /* ── Toggle ──────────────────────────────── */
+    .toggle-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+    .toggle-wrap { display: inline-block; position: relative; width: 48px; height: 26px; }
+    .toggle-wrap input { opacity: 0; width: 0; height: 0; }
+    .tog-slider {
+      position: absolute; inset: 0;
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      border-radius: 13px;
+      cursor: pointer;
+      transition: background 0.25s, border-color 0.25s;
+    }
+    .tog-slider::before {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      background: white; border-radius: 50%;
+      top: 3px; left: 3px;
+      transition: left 0.25s;
+    }
+    .toggle-wrap input:checked + .tog-slider { background: var(--accent); border-color: var(--accent); }
+    .toggle-wrap input:checked + .tog-slider::before { left: 25px; }
+
+    /* ── Pill buttons ────────────────────────── */
+    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn-pill {
+      padding: 9px 20px;
+      border-radius: 50px;
+      border: 2px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .btn-pill:hover   { border-color: var(--accent); color: var(--accent); }
+    .btn-pill.active  { background: var(--accent); border-color: var(--accent); color: white; }
+    .btn-pill:active  { transform: scale(0.96); }
+
+    /* ── On-screen keyboard ───────────────────── */
+    .keyboard-wrap {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      padding: 4px 0 2px;
+    }
+    .key-btn {
+      width: 80px; height: 134px;
+      background: var(--white-key);
+      border-radius: 0 0 10px 10px;
+      border: 1px solid #b0a0cc;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end;
+      padding-bottom: 14px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.07s, transform 0.07s, box-shadow 0.07s;
+      box-shadow: 0 5px 10px rgba(0,0,0,0.35);
+    }
+    .key-btn:hover  { background: #e2d4ff; }
+    .key-btn.pressed {
+      background: var(--hot);
+      transform: translateY(3px);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    }
+    .key-btn .k-note { font-size: 1.1rem; font-weight: 700; color: #2a1a3a; }
+    .key-btn .k-hint { font-size: 0.68rem; color: #9980b0; margin-top: 3px; }
+    .key-btn.pressed .k-note,
+    .key-btn.pressed .k-hint { color: rgba(255,255,255,0.9); }
+
+    /* ── Status / Playing ───────────────────── */
+    .playing-display {
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 700;
+      min-height: 2.6rem;
+      color: var(--hot);
+      text-shadow: 0 0 24px rgba(196,92,168,0.5);
+      letter-spacing: 1px;
+    }
+    .beat-row {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      margin-top: 12px;
+      margin-bottom: 4px;
+    }
+    .beat {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      transition: background 0.05s, border-color 0.05s, box-shadow 0.05s;
+    }
+    .beat.active {
+      background: var(--hot);
+      border-color: var(--hot);
+      box-shadow: 0 0 10px var(--hot);
+    }
+    .beat.metro {
+      background: var(--accent);
+      border-color: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    .status-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .status-item {
+      flex: 1;
+      background: var(--surface2);
+      border-radius: 10px;
+      padding: 10px 14px;
+    }
+    .status-label { font-size: 0.66rem; color: var(--dim); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+    .status-val   { font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #444466;
+      flex-shrink: 0;
+    }
+    .dot.green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+    /* ── Help hint ───────────────────────────── */
+    .hint-bar {
+      font-size: 0.75rem;
+      color: var(--dim);
+      text-align: center;
+      max-width: 700px;
+      line-height: 1.6;
+    }
+
+    /* ── Responsive ──────────────────────────── */
+    @media (max-width: 560px) {
+      .key-btn { width: 42px; height: 90px; }
+      .key-btn .k-note { font-size: 0.85rem; }
+      .key-btn .k-hint { font-size: 0.6rem; }
+      .bpm-num { font-size: 2.8rem; }
+      .card { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>SelfPlayingMusic</h1>
+  <p class="subtitle">自彈自唱伴奏系統 &nbsp;·&nbsp; 目標 1</p>
+</header>
+
+<!-- BPM Card -->
+<div class="card">
+  <div class="card-title">BPM 速度</div>
+  <div class="bpm-row">
+    <button class="btn-icon" id="bpmDown" title="BPM −5">−</button>
+    <div class="bpm-center">
+      <div class="bpm-num" id="bpmDisplay" title="滾輪可調整 BPM">120</div>
+      <div class="bpm-unit">BPM</div>
+    </div>
+    <button class="btn-icon" id="bpmUp" title="BPM +5">+</button>
+    <input type="number" class="bpm-input" id="bpmInput" value="120" min="40" max="240" title="直接輸入 BPM">
+  </div>
+  <input type="range" id="bpmSlider" min="40" max="240" value="120">
+  <div class="toggle-row">
+    <label class="toggle-wrap" title="開啟節拍器聲音">
+      <input type="checkbox" id="metroCheck">
+      <span class="tog-slider"></span>
+    </label>
+    <span style="font-size:0.9rem">節拍器聲音</span>
+  </div>
+</div>
+
+<!-- Settings Card -->
+<div class="card">
+  <div class="card-title">音色</div>
+  <div class="btn-group" id="timbreGroup">
+    <button class="btn-pill active" data-v="piano">鋼琴</button>
+    <button class="btn-pill"        data-v="organ">管風琴</button>
+  </div>
+  <div class="divider"></div>
+  <div class="card-title">和弦類型</div>
+  <div class="btn-group" id="chordGroup">
+    <button class="btn-pill active" data-v="major">大三和弦</button>
+    <button class="btn-pill"        data-v="minor">小三和弦</button>
+    <button class="btn-pill"        data-v="root-chord">根音＋和弦</button>
+    <button class="btn-pill"        data-v="arpeggio">琶音（大三）</button>
+  </div>
+</div>
+
+<!-- Keyboard Card -->
+<div class="card">
+  <div class="card-title">觸發和弦 · 點擊琴鍵或按鍵盤 C D E F G A B</div>
+  <div class="keyboard-wrap" id="keyboard"></div>
+</div>
+
+<!-- Status Card -->
+<div class="card">
+  <div class="playing-display" id="playingDisplay">—</div>
+  <div class="beat-row">
+    <div class="beat" id="b0"></div>
+    <div class="beat" id="b1"></div>
+    <div class="beat" id="b2"></div>
+    <div class="beat" id="b3"></div>
+  </div>
+  <div class="status-row">
+    <div class="status-item">
+      <div class="status-label">MIDI 鍵盤</div>
+      <div class="status-val"><span class="dot" id="midiDot"></span><span id="midiText">未連接</span></div>
+    </div>
+    <div class="status-item">
+      <div class="status-label">音訊引擎</div>
+      <div class="status-val"><span class="dot" id="audioDot"></span><span id="audioText">待機（按任意鍵啟動）</span></div>
+    </div>
+  </div>
+</div>
+
+<p class="hint-bar">
+  鍵盤快速鍵：<strong>C D E F G A B</strong> 觸發和弦 &nbsp;·&nbsp;
+  <strong>↑ ↓</strong> 調整 BPM &nbsp;·&nbsp;
+  滾輪在 BPM 數字上也可調整
+</p>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════
+//  State
+// ═══════════════════════════════════════════════════════
+let bpm       = 120;
+let chordType = 'major';   // 'major' | 'minor' | 'root-chord' | 'arpeggio'
+let timbre    = 'piano';   // 'piano' | 'organ'
+let metroOn   = false;
+let audioReady = false;
+
+// ═══════════════════════════════════════════════════════
+//  Tone.js synths
+// ═══════════════════════════════════════════════════════
+let pianoSynth = null;
+let organSynth = null;
+let organFilter = null;
+let metSynth   = null;
+let metSeq     = null;
+
+async function initAudio() {
+  if (audioReady) return;
+  await Tone.start();
+  audioReady = true;
+
+  // Piano: triangle oscillator, percussive ADSR
+  pianoSynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator : { type: 'triangle' },
+    envelope   : { attack: 0.002, decay: 0.9, sustain: 0.12, release: 2.8 },
+    volume     : -4
+  }).toDestination();
+
+  // Organ: sawtooth → lowpass filter, fully sustained
+  organFilter = new Tone.Filter({ frequency: 2000, type: 'lowpass', rolloff: -24 })
+    .toDestination();
+  organSynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator : { type: 'sawtooth' },
+    envelope   : { attack: 0.05, decay: 0, sustain: 1, release: 0.12 },
+    volume     : -10
+  }).connect(organFilter);
+
+  // Metronome click
+  metSynth = new Tone.Synth({
+    oscillator : { type: 'triangle' },
+    envelope   : { attack: 0.001, decay: 0.07, sustain: 0, release: 0.04 },
+    volume     : -6
+  }).toDestination();
+
+  Tone.Transport.bpm.value = bpm;
+  Tone.Transport.start();
+
+  setAudioStatus(true);
+  applyMetronome(); // apply if toggle was switched before audio init
+}
+
+function activeSynth() {
+  return timbre === 'piano' ? pianoSynth : organSynth;
+}
+
+// ═══════════════════════════════════════════════════════
+//  Metronome
+// ═══════════════════════════════════════════════════════
+function applyMetronome() {
+  if (metSeq) { metSeq.stop(); metSeq.dispose(); metSeq = null; }
+  if (!metroOn || !audioReady) return;
+
+  metSeq = new Tone.Sequence((time, i) => {
+    const freq = (i === 0) ? 880 : 660;
+    metSynth.triggerAttackRelease(freq, '32n', time);
+    // Sync visual to audio time
+    const delayMs = Math.max(0, (time - Tone.now()) * 1000);
+    setTimeout(() => flashMetro(i), delayMs);
+  }, [0, 1, 2, 3], '4n');
+  metSeq.start(0);
+}
+
+function flashMetro(beat) {
+  document.querySelectorAll('.beat').forEach((el, i) => {
+    // Don't override an active chord-beat dot
+    if (!el.classList.contains('active')) {
+      el.classList.toggle('metro', i === beat);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  Chord helpers
+// ═══════════════════════════════════════════════════════
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+function midiToName(midi) {
+  return NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
+}
+
+function getChordMidis(root) {
+  const intervals = (chordType === 'minor') ? [0, 3, 7] : [0, 4, 7];
+  return intervals.map(i => root + i);
+}
+
+function chordLabel() {
+  return { major: '大三和弦', minor: '小三和弦', 'root-chord': '根音＋和弦', arpeggio: '琶音' }[chordType];
+}
+
+// ═══════════════════════════════════════════════════════
+//  Playback
+// ═══════════════════════════════════════════════════════
+let beatTimers = [];
+
+function cancelCurrent() {
+  if (pianoSynth) pianoSynth.releaseAll();
+  if (organSynth) organSynth.releaseAll();
+  beatTimers.forEach(clearTimeout);
+  beatTimers = [];
+}
+
+function clearBeatDots() {
+  for (let i = 0; i < 4; i++) {
+    document.getElementById('b' + i).classList.remove('active');
+  }
+}
+
+async function triggerChord(rootMidi) {
+  await initAudio();
+  cancelCurrent();
+
+  const syn = activeSynth();
+  if (!syn) return;
+
+  const midis = getChordMidis(rootMidi);
+  const freqs = midis.map(m => Tone.Midi(m).toFrequency());
+  const beatSec   = 60 / bpm;
+  const measureSec = beatSec * 4;
+  const now = Tone.now() + 0.02; // small scheduling lookahead
+
+  document.getElementById('playingDisplay').textContent =
+    midiToName(rootMidi) + '  ' + chordLabel();
+
+  if (chordType === 'major' || chordType === 'minor') {
+    // All notes together for the full measure
+    syn.triggerAttackRelease(freqs, measureSec, now);
+  } else if (chordType === 'root-chord') {
+    // Beat 1: root, Beats 2–4: chord struck once each beat (恰恰恰)
+    syn.triggerAttackRelease(freqs[0], beatSec * 0.88, now);
+    for (let i = 1; i <= 3; i++) {
+      syn.triggerAttackRelease(freqs, beatSec * 0.88, now + i * beatSec);
+    }
+  } else {
+    // Arpeggio: Root → 3rd → 5th → 3rd, one note per beat
+    [freqs[0], freqs[1], freqs[2], freqs[1]].forEach((f, i) => {
+      syn.triggerAttackRelease(f, beatSec * 0.88, now + i * beatSec);
+    });
+  }
+
+  // Beat dot animation (visual only, setTimeout is fine here)
+  for (let i = 0; i < 4; i++) {
+    beatTimers.push(setTimeout(() => {
+      clearBeatDots();
+      document.getElementById('b' + i).classList.add('active');
+    }, i * beatSec * 1000 + 20));
+  }
+  beatTimers.push(setTimeout(() => {
+    clearBeatDots();
+    document.getElementById('playingDisplay').textContent = '—';
+  }, (measureSec + 0.15) * 1000));
+}
+
+// ═══════════════════════════════════════════════════════
+//  MIDI
+// ═══════════════════════════════════════════════════════
+async function initMidi() {
+  if (!navigator.requestMIDIAccess) {
+    setMidiStatus(false, '瀏覽器不支援 Web MIDI');
+    return;
+  }
+  try {
+    const access = await navigator.requestMIDIAccess();
+    const bind = () => {
+      access.inputs.forEach(port => { port.onmidimessage = onMidiMessage; });
+      setMidiStatus(access.inputs.size > 0, null, access.inputs.size);
+    };
+    bind();
+    access.onstatechange = bind;
+  } catch {
+    setMidiStatus(false, '權限被拒絕');
+  }
+}
+
+function onMidiMessage(ev) {
+  const [status, note, velocity] = ev.data;
+  const cmd = status & 0xf0;
+  if (cmd === 0x90 && velocity > 0) triggerChord(note); // Note On
+}
+
+function setMidiStatus(ok, msg, count) {
+  document.getElementById('midiDot').className  = 'dot' + (ok ? ' green' : '');
+  document.getElementById('midiText').textContent =
+    msg ?? (ok ? `已連接（${count} 裝置）` : '未連接');
+}
+
+function setAudioStatus(ok) {
+  document.getElementById('audioDot').className  = 'dot' + (ok ? ' green' : '');
+  document.getElementById('audioText').textContent = ok ? '就緒' : '待機';
+}
+
+// ═══════════════════════════════════════════════════════
+//  On-screen keyboard
+// ═══════════════════════════════════════════════════════
+const KEYS = [
+  { note: 'C', midi: 60, key: 'c' },
+  { note: 'D', midi: 62, key: 'd' },
+  { note: 'E', midi: 64, key: 'e' },
+  { note: 'F', midi: 65, key: 'f' },
+  { note: 'G', midi: 67, key: 'g' },
+  { note: 'A', midi: 69, key: 'a' },
+  { note: 'B', midi: 71, key: 'b' },
+];
+
+const kbContainer = document.getElementById('keyboard');
+KEYS.forEach(({ note, midi, key }) => {
+  const el = document.createElement('div');
+  el.className   = 'key-btn';
+  el.dataset.key = key;
+  el.innerHTML   = `<span class="k-note">${note}</span><span class="k-hint">[${key.toUpperCase()}]</span>`;
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    el.classList.add('pressed');
+    triggerChord(midi);
+  });
+  el.addEventListener('pointerup',    () => el.classList.remove('pressed'));
+  el.addEventListener('pointercancel',() => el.classList.remove('pressed'));
+  el.addEventListener('pointerleave', () => el.classList.remove('pressed'));
+  kbContainer.appendChild(el);
+});
+
+// ═══════════════════════════════════════════════════════
+//  Computer keyboard
+// ═══════════════════════════════════════════════════════
+const held = new Set();
+
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  const lk    = e.key.toLowerCase();
+  const found = KEYS.find(k => k.key === lk);
+
+  if (found && !held.has(lk)) {
+    held.add(lk);
+    document.querySelector(`.key-btn[data-key="${lk}"]`)?.classList.add('pressed');
+    triggerChord(found.midi);
+  }
+
+  // BPM arrow keys (not when typing in the number input)
+  if (document.activeElement !== document.getElementById('bpmInput')) {
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setBpm(bpm + 1); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setBpm(bpm - 1); }
+  }
+});
+
+document.addEventListener('keyup', e => {
+  const lk = e.key.toLowerCase();
+  held.delete(lk);
+  document.querySelector(`.key-btn[data-key="${lk}"]`)?.classList.remove('pressed');
+});
+
+// ═══════════════════════════════════════════════════════
+//  BPM
+// ═══════════════════════════════════════════════════════
+function setBpm(v) {
+  bpm = Math.max(40, Math.min(240, Math.round(+v || 120)));
+  document.getElementById('bpmDisplay').textContent = bpm;
+  document.getElementById('bpmSlider').value        = bpm;
+  document.getElementById('bpmInput').value         = bpm;
+  if (audioReady) Tone.Transport.bpm.value = bpm;
+}
+
+document.getElementById('bpmDown').addEventListener('click', () => setBpm(bpm - 5));
+document.getElementById('bpmUp'  ).addEventListener('click', () => setBpm(bpm + 5));
+
+document.getElementById('bpmSlider').addEventListener('input',
+  e => setBpm(e.target.value));
+
+document.getElementById('bpmInput').addEventListener('change',
+  e => setBpm(e.target.value));
+
+document.getElementById('bpmInput').addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp')   { e.preventDefault(); setBpm(bpm + 1); }
+  if (e.key === 'ArrowDown') { e.preventDefault(); setBpm(bpm - 1); }
+});
+
+// Scroll wheel on the big BPM number
+document.getElementById('bpmDisplay').addEventListener('wheel', e => {
+  e.preventDefault();
+  setBpm(bpm + (e.deltaY < 0 ? 1 : -1));
+}, { passive: false });
+
+// ═══════════════════════════════════════════════════════
+//  Timbre & Chord type buttons
+// ═══════════════════════════════════════════════════════
+document.getElementById('timbreGroup').addEventListener('click', e => {
+  const v = e.target.dataset.v;
+  if (!v) return;
+  document.querySelectorAll('#timbreGroup .btn-pill')
+    .forEach(b => b.classList.toggle('active', b.dataset.v === v));
+  timbre = v;
+});
+
+document.getElementById('chordGroup').addEventListener('click', e => {
+  const v = e.target.dataset.v;
+  if (!v) return;
+  document.querySelectorAll('#chordGroup .btn-pill')
+    .forEach(b => b.classList.toggle('active', b.dataset.v === v));
+  chordType = v;
+});
+
+// ═══════════════════════════════════════════════════════
+//  Metronome toggle
+// ═══════════════════════════════════════════════════════
+document.getElementById('metroCheck').addEventListener('change', async e => {
+  metroOn = e.target.checked;
+  await initAudio();
+  applyMetronome();
+  if (!metroOn) {
+    document.querySelectorAll('.beat').forEach(b => b.classList.remove('metro'));
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+//  Boot
+// ═══════════════════════════════════════════════════════
+initMidi();
+</script>
+</body>
+</html>
