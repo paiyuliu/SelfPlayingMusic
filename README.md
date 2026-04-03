@@ -41,7 +41,9 @@
 
 ### 其他
 
-- **音色**：鋼琴 / 管風琴 切換
+- **音色**：6 種真實樂器樣本可選
+  - 鋼琴、管風琴、Harmonium、木吉他、尼龍吉他、豎琴
+  - 使用 `Tone.Sampler` 載入真實錄音，切換音色時自動載入
 - **節拍器**：可開關聲音，使用 Tone.js 精準計時
 - **節拍視覺**：4 個圓點逐拍閃爍
 
@@ -51,15 +53,19 @@
 
 | 項目 | 技術 |
 |------|------|
-| 音訊合成 | [Tone.js](https://tonejs.github.io/) 14.x |
+| 音訊合成 | [Tone.js](https://tonejs.github.io/) 14.x + 真實樂器樣本 |
 | MIDI 輸入 | Web MIDI API |
-| 部署 | GitHub Pages（單一 index.html） |
+| 部署 | GitHub Pages（index.html + samples/） |
 
 ---
 
 ## 本地執行
 
-直接用瀏覽器開啟 `index.html` 即可，無需伺服器。
+需透過本地伺服器開啟，直接用瀏覽器開啟 `index.html` 會因 CORS 限制無法載入音色樣本。
+
+推薦方式：
+- VS Code 安裝 **Live Server** 擴充套件，右鍵 `index.html` → Open with Live Server
+- 或執行 `npx serve .` / `python -m http.server`
 
 > MIDI 鍵盤需使用支援 Web MIDI API 的瀏覽器（建議 Chrome / Edge）。
 

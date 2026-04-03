@@ -315,6 +315,10 @@
   <div class="btn-group" id="timbreGroup">
     <button class="btn-pill active" data-v="piano">鋼琴</button>
     <button class="btn-pill"        data-v="organ">管風琴</button>
+    <button class="btn-pill"        data-v="harmonium">Harmonium</button>
+    <button class="btn-pill"        data-v="guitar-acoustic">木吉他</button>
+    <button class="btn-pill"        data-v="guitar-nylon">尼龍吉他</button>
+    <button class="btn-pill"        data-v="harp">豎琴</button>
   </div>
   <div class="divider"></div>
   <div class="card-title">和弦類型</div>
@@ -371,61 +375,131 @@
 'use strict';
 
 // ═══════════════════════════════════════════════════════
+//  Sample map helpers
+// ═══════════════════════════════════════════════════════
+const SHARP_MAP = { Cs:'C#', Ds:'D#', Fs:'F#', Gs:'G#', As:'A#' };
+function sm(notes, octaves) {
+  const out = {};
+  for (const oct of octaves)
+    for (const n of notes)
+      out[(SHARP_MAP[n] || n) + oct] = n + oct + '.mp3';
+  return out;
+}
+const A12 = ['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
+
+// ═══════════════════════════════════════════════════════
+//  Instrument definitions
+// ═══════════════════════════════════════════════════════
+const INSTRUMENT_DEFS = {
+  piano: {
+    label: '鋼琴', vol: -6,
+    baseUrl: 'samples/piano/',
+    urls: { ...sm(A12, [1,2,3,4,5,6,7]), 'C8':'C8.mp3' }
+  },
+  organ: {
+    label: '管風琴', vol: -8,
+    baseUrl: 'samples/organ/',
+    urls: { ...sm(['C','Ds','Fs','A'], [1,2,3,4,5]), 'C6':'C6.mp3' }
+  },
+  harmonium: {
+    label: 'Harmonium', vol: -6,
+    baseUrl: 'samples/harmonium/',
+    urls: {
+      ...sm(A12, [2,3]),
+      ...sm(['C','Cs','D','Ds','E','F','G','Gs','A','As','B'], [4]),
+      'C5':'C5.mp3', 'C#5':'Cs5.mp3', 'D5':'D5.mp3'
+    }
+  },
+  'guitar-acoustic': {
+    label: '木吉他', vol: -4,
+    baseUrl: 'samples/guitar-acoustic/',
+    urls: {
+      ...sm(A12, [3,4]),
+      ...sm(['A','As','B','D','Ds','E','F','Fs','G','Gs'], [2]),
+      'C5':'C5.mp3', 'C#5':'Cs5.mp3', 'D5':'D5.mp3'
+    }
+  },
+  'guitar-nylon': {
+    label: '尼龍吉他', vol: -4,
+    baseUrl: 'samples/guitar-nylon/',
+    urls: {
+      'B1':'B1.mp3',
+      'D2':'D2.mp3','E2':'E2.mp3','F#2':'Fs2.mp3','G#2':'Gs2.mp3','A2':'A2.mp3','B2':'B2.mp3',
+      'C#3':'Cs3.mp3','D3':'D3.mp3','E3':'E3.mp3','F#3':'Fs3.mp3','G3':'G3.mp3','A3':'A3.mp3','B3':'B3.mp3',
+      'C#4':'Cs4.mp3','D#4':'Ds4.mp3','E4':'E4.mp3','F#4':'Fs4.mp3','G#4':'Gs4.mp3','A4':'A4.mp3','B4':'B4.mp3',
+      'C#5':'Cs5.mp3','D5':'D5.mp3','E5':'E5.mp3','F#5':'Fs5.mp3','G5':'G5.mp3','G#5':'Gs5.mp3','A5':'A5.mp3','A#5':'As5.mp3'
+    }
+  },
+  harp: {
+    label: '豎琴', vol: -4,
+    baseUrl: 'samples/harp/',
+    urls: {
+      'E1':'E1.mp3','G1':'G1.mp3','B1':'B1.mp3',
+      'D2':'D2.mp3','F2':'F2.mp3','A2':'A2.mp3',
+      'C3':'C3.mp3','E3':'E3.mp3','G3':'G3.mp3','B3':'B3.mp3',
+      'D4':'D4.mp3','F4':'F4.mp3','A4':'A4.mp3',
+      'C5':'C5.mp3','E5':'E5.mp3','G5':'G5.mp3','B5':'B5.mp3',
+      'F6':'F6.mp3','A6':'A6.mp3','B6':'B6.mp3',
+      'D7':'D7.mp3','F7':'F7.mp3'
+    }
+  }
+};
+
+// ═══════════════════════════════════════════════════════
 //  State
 // ═══════════════════════════════════════════════════════
 let bpm        = 120;
-let chordType  = 'major';   // 'major' | 'minor' | 'root-chord' | 'arpeggio'
-let timbre     = 'piano';   // 'piano' | 'organ'
+let chordType  = 'major';
+let timbre     = 'piano';
 let metroOn    = false;
 let audioReady = false;
-let chordBeats = 4;         // 1 | 2 | 3 | 4
+let chordBeats = 4;
+
+const samplerCache = {};        // name → Tone.Sampler instance
+const samplerReady = new Set(); // names whose onload has fired
+let playingSampler = null;
 
 // ═══════════════════════════════════════════════════════
-//  Tone.js synths
+//  Metronome synth (kept synthetic)
 // ═══════════════════════════════════════════════════════
-let pianoSynth = null;
-let organSynth = null;
-let organFilter = null;
-let metSynth   = null;
-let metSeq     = null;
+let metSynth = null;
+let metSeq   = null;
 
+// ═══════════════════════════════════════════════════════
+//  Audio init
+// ═══════════════════════════════════════════════════════
 async function initAudio() {
   if (audioReady) return;
   await Tone.start();
   audioReady = true;
-
-  // Piano: triangle oscillator, percussive ADSR
-  pianoSynth = new Tone.PolySynth(Tone.Synth, {
-    oscillator : { type: 'triangle' },
-    envelope   : { attack: 0.002, decay: 0.9, sustain: 0.12, release: 2.8 },
-    volume     : -4
-  }).toDestination();
-
-  // Organ: sawtooth → lowpass filter, fully sustained
-  organFilter = new Tone.Filter({ frequency: 2000, type: 'lowpass', rolloff: -24 })
-    .toDestination();
-  organSynth = new Tone.PolySynth(Tone.Synth, {
-    oscillator : { type: 'sawtooth' },
-    envelope   : { attack: 0.05, decay: 0, sustain: 1, release: 0.12 },
-    volume     : -10
-  }).connect(organFilter);
-
-  // Metronome click
-  metSynth = new Tone.Synth({
-    oscillator : { type: 'triangle' },
-    envelope   : { attack: 0.001, decay: 0.07, sustain: 0, release: 0.04 },
-    volume     : -6
-  }).toDestination();
-
   Tone.Transport.bpm.value = bpm;
   Tone.Transport.start();
 
-  setAudioStatus(true);
-  applyMetronome(); // apply if toggle was switched before audio init
+  metSynth = new Tone.Synth({
+    oscillator: { type: 'triangle' },
+    envelope:   { attack: 0.001, decay: 0.07, sustain: 0, release: 0.04 },
+    volume: -6
+  }).toDestination();
+
+  setAudioStatus(true, '就緒');
+  applyMetronome();
+  loadSampler('piano'); // preload default
 }
 
-function activeSynth() {
-  return timbre === 'piano' ? pianoSynth : organSynth;
+function loadSampler(name) {
+  if (samplerCache[name]) return; // already loading or loaded
+  const def = INSTRUMENT_DEFS[name];
+  if (!def) return;
+  const s = new Tone.Sampler({
+    urls:    def.urls,
+    baseUrl: def.baseUrl,
+    volume:  def.vol ?? 0,
+    onload: () => {
+      samplerReady.add(name);
+      if (name === timbre) setAudioStatus(true, '就緒');
+    }
+  }).toDestination();
+  samplerCache[name] = s;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -434,14 +508,12 @@ function activeSynth() {
 function applyMetronome() {
   if (metSeq) { metSeq.stop(); metSeq.dispose(); metSeq = null; }
   if (!metroOn || !audioReady) return;
-
   metSeq = new Tone.Sequence((time, i) => {
     const freq = (i === 0) ? 880 : 660;
     metSynth.triggerAttackRelease(freq, '32n', time);
-    // Sync visual to audio time
     const delayMs = Math.max(0, (time - Tone.now()) * 1000);
     setTimeout(() => flashMetro(i), delayMs);
-  }, [0, 1, 2, 3], '4n');
+  }, [0,1,2,3], '4n');
   metSeq.start(0);
 }
 
@@ -464,12 +536,11 @@ function midiToName(midi) {
 }
 
 function getChordMidis(root) {
-  const intervals = (chordType === 'minor') ? [0, 3, 7] : [0, 4, 7];
-  return intervals.map(i => root + i);
+  return (chordType === 'minor' ? [0,3,7] : [0,4,7]).map(i => root + i);
 }
 
 function chordLabel() {
-  return { major: '大三和弦', minor: '小三和弦', 'root-chord': '根音＋和弦', arpeggio: '琶音' }[chordType];
+  return { major:'大三和弦', minor:'小三和弦', 'root-chord':'根音＋和弦', arpeggio:'琶音' }[chordType];
 }
 
 // ═══════════════════════════════════════════════════════
@@ -478,29 +549,35 @@ function chordLabel() {
 let beatTimers = [];
 
 function cancelCurrent() {
-  if (pianoSynth) pianoSynth.releaseAll();
-  if (organSynth) organSynth.releaseAll();
+  if (playingSampler) { try { playingSampler.releaseAll(); } catch(e) {} }
+  playingSampler = null;
   beatTimers.forEach(clearTimeout);
   beatTimers = [];
 }
 
 function clearBeatDots() {
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 4; i++)
     document.getElementById('b' + i).classList.remove('active');
-  }
 }
 
 async function triggerChord(rootMidi) {
   await initAudio();
+
+  if (!samplerReady.has(timbre)) {
+    loadSampler(timbre);
+    setAudioStatus(true, '載入音色中…');
+    return;
+  }
+
   cancelCurrent();
 
-  const syn = activeSynth();
-  if (!syn) return;
+  const syn = samplerCache[timbre];
+  playingSampler = syn;
 
   const midis = getChordMidis(rootMidi);
-  const freqs = midis.map(m => Tone.Midi(m).toFrequency());
+  const notes = midis.map(midiToName); // e.g. ['C4','E4','G4']
   const beatSec = 60 / bpm;
-  const now = Tone.now() + 0.02; // small scheduling lookahead
+  const now = Tone.now() + 0.02;
 
   const isFixed = (chordType === 'root-chord' || chordType === 'arpeggio');
   const activeBeatCount = isFixed ? 4 : chordBeats;
@@ -511,22 +588,18 @@ async function triggerChord(rootMidi) {
     midiToName(rootMidi) + '  ' + chordLabel() + beatsLabel;
 
   if (chordType === 'major' || chordType === 'minor') {
-    // All notes together for the selected number of beats
-    syn.triggerAttackRelease(freqs, chordDuration, now);
+    syn.triggerAttackRelease(notes, chordDuration, now);
   } else if (chordType === 'root-chord') {
-    // Beat 1: root, Beats 2–4: chord struck once each beat (恰恰恰)
-    syn.triggerAttackRelease(freqs[0], beatSec * 0.88, now);
-    for (let i = 1; i <= 3; i++) {
-      syn.triggerAttackRelease(freqs, beatSec * 0.88, now + i * beatSec);
-    }
+    syn.triggerAttackRelease(notes[0], beatSec * 0.88, now);
+    for (let i = 1; i <= 3; i++)
+      syn.triggerAttackRelease(notes, beatSec * 0.88, now + i * beatSec);
   } else {
-    // Arpeggio: Root → 3rd → 5th → 3rd, one note per beat
-    [freqs[0], freqs[1], freqs[2], freqs[1]].forEach((f, i) => {
-      syn.triggerAttackRelease(f, beatSec * 0.88, now + i * beatSec);
+    // Arpeggio: Root → 3rd → 5th → 3rd
+    [notes[0], notes[1], notes[2], notes[1]].forEach((n, i) => {
+      syn.triggerAttackRelease(n, beatSec * 0.88, now + i * beatSec);
     });
   }
 
-  // Beat dot animation (visual only, setTimeout is fine here)
   for (let i = 0; i < activeBeatCount; i++) {
     beatTimers.push(setTimeout(() => {
       clearBeatDots();
@@ -572,9 +645,9 @@ function setMidiStatus(ok, msg, count) {
     msg ?? (ok ? `已連接（${count} 裝置）` : '未連接');
 }
 
-function setAudioStatus(ok) {
+function setAudioStatus(ok, msg) {
   document.getElementById('audioDot').className  = 'dot' + (ok ? ' green' : '');
-  document.getElementById('audioText').textContent = ok ? '就緒' : '待機';
+  document.getElementById('audioText').textContent = msg ?? (ok ? '就緒' : '待機（按任意鍵啟動）');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -676,6 +749,14 @@ document.getElementById('timbreGroup').addEventListener('click', e => {
   document.querySelectorAll('#timbreGroup .btn-pill')
     .forEach(b => b.classList.toggle('active', b.dataset.v === v));
   timbre = v;
+  if (audioReady) {
+    if (!samplerReady.has(v)) {
+      loadSampler(v);
+      setAudioStatus(true, '載入音色中…');
+    } else {
+      setAudioStatus(true, '就緒');
+    }
+  }
 });
 
 document.getElementById('chordGroup').addEventListener('click', e => {
