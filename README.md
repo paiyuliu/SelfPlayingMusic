@@ -6,9 +6,9 @@
 
 ---
 
-## 線上試用
+## 線上使用
 
-> 部署後填入 GitHub Pages 網址
+> https://paiyuliu.github.io/SelfPlayingMusic/
 
 ---
 
