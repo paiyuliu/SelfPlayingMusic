@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SelfPlayingMusic 自彈自唱</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+  <script src="jianpu.space/MMLNote.js"></script>
+  <script src="jianpu.space/MMLPart.js"></script>
+  <script src="jianpu.space/MMLPlayer.js"></script>
+  <script src="jianpu.space/je.js"></script>
   <style>
     :root {
       --bg:         #0d0d1a;
@@ -270,6 +274,62 @@
       line-height: 1.6;
     }
 
+    /* ── Melody / Jianpu section ─────────────── */
+    .song-select {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 2px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 0.88rem;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .song-select:focus { border-color: var(--accent); }
+
+    #jianpuInput {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 2px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 0.82rem;
+      font-family: monospace;
+      line-height: 1.5;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #jianpuInput:focus { border-color: var(--accent); }
+
+    .jianpu-display {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 2px 0;
+      overflow-y: auto;
+      max-height: 340px;
+      padding: 8px 0 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .jianpu-display svg {
+      font-size: 20px;
+      fill: var(--text);
+      flex-shrink: 0;
+      overflow: visible;
+    }
+    .jianpu-display .play-mark { fill: transparent; }
+    .jianpu-display g.playing .play-mark {
+      fill: var(--accent);
+      opacity: 0.38;
+    }
+    .jianpu-display .accidental { font-size: 12px; }
+
     /* ── Responsive ──────────────────────────── */
     @media (max-width: 560px) {
       .key-btn { width: 42px; height: 90px; }
@@ -284,7 +344,7 @@
 
 <header>
   <h1>SelfPlayingMusic</h1>
-  <p class="subtitle">自彈自唱伴奏系統 &nbsp;·&nbsp; 目標 1</p>
+  <p class="subtitle">自彈自唱伴奏系統 &nbsp;·&nbsp; 目標 1 ＋ 2</p>
 </header>
 
 <!-- BPM Card -->
@@ -363,6 +423,35 @@
       <div class="status-val"><span class="dot" id="audioDot"></span><span id="audioText">待機（按任意鍵啟動）</span></div>
     </div>
   </div>
+</div>
+
+<!-- Melody Card (目標2) -->
+<div class="card">
+  <div class="card-title">主旋律 · 簡譜播放</div>
+
+  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+    <select id="songSelect" class="song-select">
+      <option value="miss_you">好想你 — 四葉草</option>
+      <option value="custom">貼上自訂簡譜…</option>
+    </select>
+    <button class="btn-pill active" id="loadSongBtn" style="white-space:nowrap;">載入</button>
+  </div>
+
+  <div id="customInputWrap" style="display:none; margin-bottom:12px;">
+    <textarea id="jianpuInput" rows="6" placeholder="在此貼上簡譜文字（jianpu.space 格式）…"></textarea>
+    <button class="btn-pill" id="parseBtn" style="margin-top:8px;">解析並顯示</button>
+  </div>
+
+  <div id="melodyControls" style="display:none; margin-bottom:8px;">
+    <div class="btn-group">
+      <button class="btn-pill active" id="melPlayBtn">▶ 播放</button>
+      <button class="btn-pill" id="melPauseBtn">⏸ 暫停</button>
+      <button class="btn-pill" id="melStopBtn">⏹ 停止</button>
+      <span id="melBpmLabel" style="font-size:0.82rem; color:var(--dim); align-self:center;"></span>
+    </div>
+  </div>
+
+  <div id="jianpuDisplay" class="jianpu-display"></div>
 </div>
 
 <p class="hint-bar">
@@ -791,6 +880,249 @@ document.getElementById('metroCheck').addEventListener('change', async e => {
 //  Boot
 // ═══════════════════════════════════════════════════════
 initMidi();
+</script>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════
+//  Jianpu audio engine (Web Audio API, independent of Tone.js)
+// ═══════════════════════════════════════════════════════
+var jpActx, fakePno, soundBank = {};
+
+function initJianpuAudio() {
+  jpActx = new (window.AudioContext || window.webkitAudioContext)();
+  window.actx = jpActx;          // MMLPlayer references global 'actx'
+
+  var master = jpActx.createGain();
+  master.gain.value = 1;
+  master.connect(jpActx.destination);
+  window.master = master;        // MMLPlayer references global 'master'
+
+  var stoppedSound = jpActx.createGain();
+  stoppedSound.gain.value = 1e-5;
+  stoppedSound.connect(jpActx.destination);
+  window.stoppedSound = stoppedSound;  // MMLPlayer references global 'stoppedSound'
+
+  fakePno = soundBank.fakePno = { sample: genFakePiano(), center: 69, loopStart: 2, loopEnd: 2.25 };
+  window.fakePno = fakePno;      // MMLPlayer.playSound references global 'fakePno'
+}
+
+function genFakePiano() {
+  var len = 44100 * 2;
+  var buff = jpActx.createBuffer(1, len + Math.floor(44100 * 110 / 440), 44100);
+  var dat = buff.getChannelData(0);
+  var k = 440 / 44100 * Math.PI * 2;
+  var amp = 1;
+  for (var t = 0; t < len; t++) {
+    var sum = 0;
+    for (var n = 1; n < 40; n++) sum += Math.sin(k * n * t) / n * Math.exp(-t * n / len);
+    amp = 1 / Math.pow(1 + t / 44100, 2);
+    dat[t] = sum * amp * 0.25;
+  }
+  for (var t = 0; t < Math.floor(44100 * 110 / 440); t++) {
+    var sum = 0;
+    for (var n = 1; n < 40; n++) sum += Math.sin(k * n * t) / n * Math.exp(-n);
+    dat[len + t] = sum * amp * 0.25;
+  }
+  return buff;
+}
+
+window.addEventListener('load', initJianpuAudio);
+
+// ═══════════════════════════════════════════════════════
+//  Patch MMLPlayer for auto-scroll
+// ═══════════════════════════════════════════════════════
+const _origShowNote = MMLPlayer.prototype.showNote;
+MMLPlayer.prototype.showNote = function (n, i) {
+  _origShowNote.call(this, n, i);
+  const el = this.view.notes[n.source]?.span;
+  if (el) {
+    const svg = el.closest('svg') || el;
+    svg.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+//  Melody section logic
+// ═══════════════════════════════════════════════════════
+let currentScore = null;
+let melodyPlayer = null;
+
+const PRESET_SONGS = {
+  miss_you: 'jianpu.space/miss_you.txt'
+};
+
+async function fetchSong(name) {
+  const res = await fetch(PRESET_SONGS[name]);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.text();
+}
+
+function renderScore(text) {
+  const display = document.getElementById('jianpuDisplay');
+  display.innerHTML = '';
+
+  const score = parseJianpu(text, undefined, undefined);
+  if (!score || score.length === 0) return;
+
+  const svgList = [];
+  let maxY = 0;
+
+  // First pass: notes and bars
+  for (let i = 0; i < score.length; i++) {
+    const meas = score[i];
+    const svg = createSVG('svg', { width: meas.length * 15, height: 57 });
+    let x = 0, beat = 0, connect = false, y = 0;
+
+    for (let j = 0; j < meas.length; j++) {
+      const item = meas[j];
+      if (item instanceof Note) {
+        beat += item.duration.getBeat();
+        const connectR = item.duration.type > 0
+          && (beat - Math.floor(beat)) !== 0
+          && meas[j + 1] instanceof Note
+          && meas[j + 1].duration.type > 0;
+        svg.appendChild(item.render(x, 34, connect, connectR));
+        connect = connectR;
+        y = Math.max(y, item.getMaxY());
+      } else {
+        svg.appendChild(item.render(x, 34));
+      }
+      x += item.getWidth();
+    }
+    svg.width.baseVal.value = x;
+    svg.height.baseVal.value = 34 + y;
+    svgList.push(svg);
+    maxY = Math.max(maxY, y);
+    display.appendChild(svg);
+  }
+
+  // Second pass: lyrics
+  for (let i = 0; i < score.length; i++) {
+    const meas = score[i];
+    const svg = svgList[i];
+    let x = 0;
+    for (let j = 0; j < meas.length; j++) {
+      if (meas[j] instanceof Note && meas[j].lyrics)
+        svg.appendChild(meas[j].renderLyrics(x, maxY + 32));
+      x += meas[j].getWidth();
+    }
+    svg.height.baseVal.value = 38 + maxY;
+  }
+
+  currentScore = score;
+  document.getElementById('melodyControls').style.display = '';
+  document.getElementById('melBpmLabel').textContent = '♩ = ' + (score[0]?.bpm || 120);
+}
+
+function buildAndPlayMelody(score) {
+  const part = new MMLPart(0);
+  const tempos = [];
+  const myKey = score.key != null ? score.key : 0;
+  let tmpKey = 0;
+  const view = { notes: [] };
+  let beat = 0;
+  let oldPitch = 'rest';
+
+  for (let i = 0; i < score.length; i++) {
+    const me = score[i];
+    tempos.push({ position: beat, bpm: me.bpm });
+
+    for (let j = 0; j < me.length; j++) {
+      const item = me[j];
+      if (!(item instanceof Note)) continue;
+      if (item.transpose) tmpKey += item.transpose;
+
+      const du = 4 * Math.pow(2, item.duration.type) / item.duration.mul;
+      const step = item.pitch.step;
+      let pitch;
+
+      if (step === '0') {
+        pitch = 'rest';
+      } else if (step >= '1' && step <= '7') {
+        pitch = [0, 0, 2, 4, 5, 7, 9, 11][+step] + 60 + item.pitch.octave * 12;
+        const acc = item.pitch.accidental;
+        if (acc === '♯')  pitch += 1;
+        if (acc === '♯♯') pitch += 2;
+        if (acc === '♭')  pitch -= 1;
+        if (acc === '♭♭') pitch -= 2;
+        pitch += myKey + tmpKey;
+      } else if (step === '-') {
+        pitch = oldPitch;
+        if (part.notes.length > 0) part.notes[part.notes.length - 1].tieAfter = true;
+      } else {
+        pitch = 'rest';
+      }
+
+      const note = new MMLNote(pitch, du, item.duration.dots);
+      note.source = view.notes.length;
+      view.notes.push({ span: item.note_svg });
+      part.addNote(note);
+      oldPitch = pitch;
+      beat += 1 / du * (2 - Math.pow(0.5, note.dots));
+    }
+  }
+
+  part.setTempo(tempos);
+  part.connectTie();
+
+  const player = new MMLPlayer(part);
+  player.view = view;
+  player.play();
+  return player;
+}
+
+// ── UI event handlers ──────────────────────────────────
+document.getElementById('songSelect').addEventListener('change', function () {
+  const isCustom = this.value === 'custom';
+  document.getElementById('customInputWrap').style.display = isCustom ? '' : 'none';
+  document.getElementById('melodyControls').style.display = 'none';
+  document.getElementById('jianpuDisplay').innerHTML = '';
+  currentScore = null;
+  if (melodyPlayer) { melodyPlayer.stop(); melodyPlayer = null; }
+});
+
+document.getElementById('loadSongBtn').addEventListener('click', async function () {
+  const val = document.getElementById('songSelect').value;
+  if (val === 'custom') {
+    document.getElementById('customInputWrap').style.display = '';
+    return;
+  }
+  this.textContent = '載入中…';
+  this.disabled = true;
+  try {
+    const text = await fetchSong(val);
+    renderScore(text);
+  } catch (e) {
+    alert('載入失敗：' + e.message);
+  } finally {
+    this.textContent = '載入';
+    this.disabled = false;
+  }
+});
+
+document.getElementById('parseBtn').addEventListener('click', function () {
+  const text = document.getElementById('jianpuInput').value.trim();
+  if (text) renderScore(text);
+});
+
+document.getElementById('melPlayBtn').addEventListener('click', async function () {
+  if (!window.actx) return;
+  await actx.resume();
+  if (melodyPlayer) { melodyPlayer.stop(); melodyPlayer = null; }
+  if (!currentScore) return;
+  melodyPlayer = buildAndPlayMelody(currentScore);
+  melodyPlayer.onended = () => { melodyPlayer = null; };
+});
+
+document.getElementById('melPauseBtn').addEventListener('click', function () {
+  if (melodyPlayer) melodyPlayer.pause();
+});
+
+document.getElementById('melStopBtn').addEventListener('click', function () {
+  if (melodyPlayer) { melodyPlayer.stop(); melodyPlayer = null; }
+});
 </script>
 </body>
 </html>
