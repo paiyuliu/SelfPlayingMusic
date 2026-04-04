@@ -964,24 +964,36 @@ function renderScore(text) {
   const display = document.getElementById('jianpuDisplay');
   display.innerHTML = '';
 
-  // ── Extract H: chord lines before parsing ──────────
+  // ── Map H: chord lines to each note line's measures ──────────
+  // H: lines placed immediately before a note line apply to that line's measures.
+  // A note line is any line containing '|'. Chords are assigned left-to-right per measure.
   const rawLines = text.split('\n');
-  const chordTokens = [];
-  const cleanLines  = [];
+  const chordsByMeasure = {};  // measureIdx → chord string
+  const cleanLines = [];
+  let pendingChords = [];
+  let measureIdx = 0;
   for (const line of rawLines) {
     if (line.startsWith('H:')) {
-      chordTokens.push(...line.slice(2).trim().split(/\s+/).filter(Boolean));
+      pendingChords.push(...line.slice(2).trim().split(/\s+/).filter(Boolean));
     } else {
+      if (line.includes('|')) {  // note line — consume pending H: tokens
+        const barCount = (line.match(/\|/g) || []).length;
+        for (let k = 0; k < barCount && k < pendingChords.length; k++) {
+          chordsByMeasure[measureIdx + k] = pendingChords[k];
+        }
+        pendingChords = [];
+        measureIdx += barCount;
+      }
       cleanLines.push(line);
     }
   }
-  const chords = chordTokens; // chords[i] → chord for measure i
+  const chords = chordsByMeasure;
 
   const score = parseJianpu(cleanLines.join('\n'), undefined, undefined);
   if (!score || score.length === 0) return;
 
   // Extra top padding when chord labels are present
-  const hasChords = chords.some(c => c && c !== '-');
+  const hasChords = Object.values(chords).some(c => c && c !== '-');
   const noteY     = hasChords ? 48 : 34;  // shift notes down to make room
   const CHORD_Y   = 11;                   // chord label baseline
 
