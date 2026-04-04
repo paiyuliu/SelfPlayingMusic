@@ -329,6 +329,12 @@
       opacity: 0.38;
     }
     .jianpu-display .accidental { font-size: 12px; }
+    .jianpu-display .chord-label {
+      font-size: 11px;
+      font-weight: 700;
+      fill: var(--hot);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
 
     /* ── Responsive ──────────────────────────── */
     @media (max-width: 560px) {
@@ -886,46 +892,18 @@ initMidi();
 'use strict';
 
 // ═══════════════════════════════════════════════════════
-//  Jianpu audio engine (Web Audio API, independent of Tone.js)
+//  Jianpu audio engine — shares Tone.js AudioContext
+//  so melody and chord sampler are perfectly time-synced
 // ═══════════════════════════════════════════════════════
-var jpActx, fakePno, soundBank = {};
-
 function initJianpuAudio() {
-  jpActx = new (window.AudioContext || window.webkitAudioContext)();
-  window.actx = jpActx;          // MMLPlayer references global 'actx'
-
-  var master = jpActx.createGain();
-  master.gain.value = 1;
-  master.connect(jpActx.destination);
-  window.master = master;        // MMLPlayer references global 'master'
-
-  var stoppedSound = jpActx.createGain();
-  stoppedSound.gain.value = 1e-5;
-  stoppedSound.connect(jpActx.destination);
-  window.stoppedSound = stoppedSound;  // MMLPlayer references global 'stoppedSound'
-
-  fakePno = soundBank.fakePno = { sample: genFakePiano(), center: 69, loopStart: 2, loopEnd: 2.25 };
-  window.fakePno = fakePno;      // MMLPlayer.playSound references global 'fakePno'
-}
-
-function genFakePiano() {
-  var len = 44100 * 2;
-  var buff = jpActx.createBuffer(1, len + Math.floor(44100 * 110 / 440), 44100);
-  var dat = buff.getChannelData(0);
-  var k = 440 / 44100 * Math.PI * 2;
-  var amp = 1;
-  for (var t = 0; t < len; t++) {
-    var sum = 0;
-    for (var n = 1; n < 40; n++) sum += Math.sin(k * n * t) / n * Math.exp(-t * n / len);
-    amp = 1 / Math.pow(1 + t / 44100, 2);
-    dat[t] = sum * amp * 0.25;
-  }
-  for (var t = 0; t < Math.floor(44100 * 110 / 440); t++) {
-    var sum = 0;
-    for (var n = 1; n < 40; n++) sum += Math.sin(k * n * t) / n * Math.exp(-n);
-    dat[len + t] = sum * amp * 0.25;
-  }
-  return buff;
+  // rawContext = native AudioContext used by Tone.js
+  window.actx = Tone.getContext().rawContext;
+  window.master = actx.createGain();
+  window.master.connect(actx.destination);
+  window.stoppedSound = actx.createGain();
+  window.stoppedSound.gain.value = 0;
+  window.stoppedSound.connect(actx.destination);
+  window.fakePno = {}; // stub; playSound is overridden below
 }
 
 window.addEventListener('load', initJianpuAudio);
@@ -941,6 +919,29 @@ MMLPlayer.prototype.showNote = function (n, i) {
     const svg = el.closest('svg') || el;
     svg.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   }
+};
+
+// Override MMLPlayer audio → use the selected Tone.js Sampler (real samples)
+MMLPlayer.prototype.playSound = function (note, id) {
+  if (note.type === 'rest') return;
+  // Follow tie chain to get total duration
+  let nn = note;
+  while (nn.tieAfter) nn = nn.tieAfter;
+  const startTime = this.startTime + note.startTime;
+  const duration  = Math.max(0.05, this.startTime + nn.endTime - startTime);
+  const noteName  = NOTE_NAMES[note.pitch % 12] + (Math.floor(note.pitch / 12) - 1);
+  const sampler   = samplerCache[timbre];
+  if (sampler && samplerReady.has(timbre)) {
+    try { sampler.triggerAttackRelease(noteName, duration, startTime); } catch (e) {}
+  }
+  this.sounds[id] = {}; // lightweight tracking entry
+};
+
+MMLPlayer.prototype.stopSound = function () {
+  clearTimeout(this.playId);
+  this.playId = 0;
+  try { samplerCache[timbre]?.releaseAll?.(); } catch (e) {}
+  this.sounds = {};
 };
 
 // ═══════════════════════════════════════════════════════
@@ -963,8 +964,26 @@ function renderScore(text) {
   const display = document.getElementById('jianpuDisplay');
   display.innerHTML = '';
 
-  const score = parseJianpu(text, undefined, undefined);
+  // ── Extract H: chord lines before parsing ──────────
+  const rawLines = text.split('\n');
+  const chordTokens = [];
+  const cleanLines  = [];
+  for (const line of rawLines) {
+    if (line.startsWith('H:')) {
+      chordTokens.push(...line.slice(2).trim().split(/\s+/).filter(Boolean));
+    } else {
+      cleanLines.push(line);
+    }
+  }
+  const chords = chordTokens; // chords[i] → chord for measure i
+
+  const score = parseJianpu(cleanLines.join('\n'), undefined, undefined);
   if (!score || score.length === 0) return;
+
+  // Extra top padding when chord labels are present
+  const hasChords = chords.some(c => c && c !== '-');
+  const noteY     = hasChords ? 48 : 34;  // shift notes down to make room
+  const CHORD_Y   = 11;                   // chord label baseline
 
   const svgList = [];
   let maxY = 0;
@@ -972,7 +991,7 @@ function renderScore(text) {
   // First pass: notes and bars
   for (let i = 0; i < score.length; i++) {
     const meas = score[i];
-    const svg = createSVG('svg', { width: meas.length * 15, height: 57 });
+    const svg = createSVG('svg', { width: meas.length * 15, height: noteY + 23 });
     let x = 0, beat = 0, connect = false, y = 0;
 
     for (let j = 0; j < meas.length; j++) {
@@ -983,32 +1002,41 @@ function renderScore(text) {
           && (beat - Math.floor(beat)) !== 0
           && meas[j + 1] instanceof Note
           && meas[j + 1].duration.type > 0;
-        svg.appendChild(item.render(x, 34, connect, connectR));
+        svg.appendChild(item.render(x, noteY, connect, connectR));
         connect = connectR;
         y = Math.max(y, item.getMaxY());
       } else {
-        svg.appendChild(item.render(x, 34));
+        svg.appendChild(item.render(x, noteY));
       }
       x += item.getWidth();
     }
     svg.width.baseVal.value = x;
-    svg.height.baseVal.value = 34 + y;
+    svg.height.baseVal.value = noteY + y;
     svgList.push(svg);
     maxY = Math.max(maxY, y);
+
+    // Chord label
+    if (chords[i] && chords[i] !== '-') {
+      svg.insertBefore(
+        createSVGText(chords[i], { x: 2, y: CHORD_Y, class: 'chord-label' }),
+        svg.firstChild
+      );
+    }
+
     display.appendChild(svg);
   }
 
   // Second pass: lyrics
   for (let i = 0; i < score.length; i++) {
     const meas = score[i];
-    const svg = svgList[i];
+    const svg  = svgList[i];
     let x = 0;
     for (let j = 0; j < meas.length; j++) {
       if (meas[j] instanceof Note && meas[j].lyrics)
-        svg.appendChild(meas[j].renderLyrics(x, maxY + 32));
+        svg.appendChild(meas[j].renderLyrics(x, maxY + noteY - 2));
       x += meas[j].getWidth();
     }
-    svg.height.baseVal.value = 38 + maxY;
+    svg.height.baseVal.value = noteY + 4 + maxY;
   }
 
   currentScore = score;

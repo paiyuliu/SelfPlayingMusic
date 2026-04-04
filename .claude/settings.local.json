@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(du -sh D:/SelfPlayingMusic/samples/piano/*.mp3)",
+      "WebFetch(domain:jianpu.space)",
+      "Bash(pip list:*)",
+      "Bash(pip install:*)",
+      "Bash(node -e \"const h=require\\('http'\\),fs=require\\('fs'\\),p=require\\('path'\\);const s=h.createServer\\(\\(req,res\\)=>{let f='D:/SelfPlayingMusic'+req.url.split\\('?'\\)[0];if\\(f.endsWith\\('/'\\)\\)f+='index.html';const ext=p.extname\\(f\\);const m={'html':'text/html','js':'application/javascript','mp3':'audio/mpeg','txt':'text/plain'};try{const d=fs.readFileSync\\(f\\);res.writeHead\\(200,{'Content-Type':m[ext.slice\\(1\\)]||'application/octet-stream'}\\);res.end\\(d\\);}catch\\(e\\){res.writeHead\\(404\\);res.end\\('Not found: '+f\\);}}\\);s.listen\\(8080,\\(\\)=>console.log\\('Serving on http://localhost:8080'\\)\\);\")",
+      "Bash(curl -s http://localhost:8080/)"
+    ]
+  }
+}

@@ -1,5 +1,6 @@
 ｂｐｍ97
 /key(F3)
+H: F F Bb F Bb F Bb C C Dm C Dm C Dm Bb Gm C F F Bb C F F Bb C F - - - - - - - Dm C Dm C Dm Bb Gm C F F Bb C F F Bb C F F Bb C F F Bb C F F F
 34|5=5=5=3=5_1'_7_55_|
 L:想要傳送一封簡訊給你
 6_7_1'_3'_5.3=3=|
