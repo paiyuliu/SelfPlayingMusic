@@ -50,3 +50,6 @@
 | 歌曲 | 歌手 | 調性 | BPM | 檔案 | 狀態 |
 |------|------|------|-----|------|------|
 | 好想你 | 四葉草 | F 大調 | 97 | `jianpu.space/miss_you.txt` | 完成 |
+| 生日快樂 | — | C 大調 | 120 | `jianpu.space/birthday.txt` | 完成 |
+| 叮叮噹 (Jingle Bells) | — | C 大調 | 120 | `jianpu.space/jingle_bells.txt` | 完成 |
+| 一閃一閃亮晶晶 (Twinkle Star) | — | C 大調 | 97 | `jianpu.space/twinkle_star.txt` | 完成 |

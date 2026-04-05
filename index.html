@@ -438,6 +438,9 @@
   <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
     <select id="songSelect" class="song-select">
       <option value="miss_you">好想你 — 四葉草</option>
+      <option value="birthday">生日快樂</option>
+      <option value="jingle_bells">叮叮噹 (Jingle Bells)</option>
+      <option value="twinkle_star">一閃一閃亮晶晶 (Twinkle Star)</option>
       <option value="custom">貼上自訂簡譜…</option>
     </select>
     <button class="btn-pill active" id="loadSongBtn" style="white-space:nowrap;">載入</button>
@@ -951,7 +954,10 @@ let currentScore = null;
 let melodyPlayer = null;
 
 const PRESET_SONGS = {
-  miss_you: 'jianpu.space/miss_you.txt'
+  miss_you:     'jianpu.space/miss_you.txt',
+  birthday:     'jianpu.space/birthday.txt',
+  jingle_bells: 'jianpu.space/jingle_bells.txt',
+  twinkle_star: 'jianpu.space/twinkle_star.txt'
 };
 
 async function fetchSong(name) {
